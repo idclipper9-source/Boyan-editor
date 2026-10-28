@@ -1,0 +1,60 @@
+name: Build APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build APK
+        run: |
+          set -e
+          ROOT="$PWD"
+          # Mode 1: repo berisi boyan_editor.zip (diunggah dari HP) -> ekstrak dulu
+          # Mode 2: repo sudah berisi file proyek langsung
+          if [ -f boyan_editor.zip ]; then
+            rm -rf _proj
+            mkdir _proj
+            unzip -q boyan_editor.zip -d _proj
+            PROJ="$(dirname "$(find _proj -name pubspec.yaml | head -n 1)")"
+          else
+            PROJ="$ROOT"
+          fi
+          echo "Project folder: $PROJ"
+          cd "$PROJ"
+
+          # Buat folder android/ otomatis bila belum ada
+          if [ ! -d android ]; then
+            flutter create --org com.boyan --project-name boyan_editor --platforms android /tmp/scaffold
+            cp -r /tmp/scaffold/android ./android
+            # Android 8.0+ (API 26)
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/' android/app/build.gradle.kts 2>/dev/null || true
+            sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' android/app/build.gradle 2>/dev/null || true
+            # Nama aplikasi di launcher
+            sed -i 's/android:label="boyan_editor"/android:label="Boyan Editor"/' android/app/src/main/AndroidManifest.xml
+          fi
+
+          flutter pub get
+          flutter build apk --release
+
+          mkdir -p "$ROOT/out"
+          cp build/app/outputs/flutter-apk/app-release.apk "$ROOT/out/boyan-editor.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boyan-editor-apk
+          path: out/boyan-editor.apk
